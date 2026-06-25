@@ -1,15 +1,17 @@
 # TradingView Webhook Bot
 
-A Python FastAPI webhook server that receives BUY/SELL/EXIT alerts from TradingView indicators and logs them to SQLite and CSV for analysis.
+A Python FastAPI webhook server that receives TradingView indicator and strategy alerts, normalizes them, and logs them to SQLite + CSV for performance analysis.
 
 ## 🎯 Purpose
 
-This bot receives trading signals from your TradingView indicator (e.g., the Zone Sweep indicator we built) and:
+This bot receives trading signals from TradingView and:
 - ✅ Validates webhook authentication
+- ✅ Accepts both indicator alerts and strategy alerts
+- ✅ Normalizes strategy alerts into bot actions
 - ✅ Logs all signals to SQLite database
 - ✅ Creates CSV backup for easy analysis
 - ✅ Prevents duplicate signals (10-second window)
-- ✅ Provides API to query logged signals
+- ✅ Provides API to query logged signals and performance
 
 ## ⚠️ Important: Logging Only
 
@@ -29,6 +31,8 @@ tradingview-webhook-bot/
 ├── .env                 # Your actual secrets (gitignored)
 ├── signals.db           # SQLite database (auto-created)
 ├── trade_signals.csv    # CSV backup (auto-created)
+├── performance_trades.csv # Performance export (auto-created)
+├── performance_trades.json # Performance export (auto-created)
 └── README.md            # This file
 ```
 
@@ -48,9 +52,7 @@ pip install -r requirements.txt
 ```bash
 # Copy example file
 cp .env.example .env
-
-# Generate a secure secret
-openssl rand -hex 32
+# On Windows PowerShell use: copy .env.example .env
 
 # Edit .env and add your secret
 nano .env
@@ -58,7 +60,7 @@ nano .env
 
 Your `.env` file should look like:
 ```bash
-WEBHOOK_SECRET=9d7a3b12e6f44f2ea8c5d9012345678901234567890abcdef1234567890abcdef
+WEBHOOK_SECRET=YOUR_WEBHOOK_SECRET
 ```
 
 ### 3. Run the Server
@@ -72,16 +74,60 @@ Server will start on `http://localhost:8000`
 ## 🔌 API Endpoints
 
 ### 1. POST /webhook
-Receive TradingView alerts
+Receive TradingView alerts.
 
-**Request Body:**
+This endpoint supports two payload formats:
+- Indicator alert payload with normalized `action` values
+- Strategy alert payload using `order_action`, `order_contracts`, `order_price`, and `position_size`
+
+#### Indicator payload fields
+- `secret`
+- `source`
+- `action` — one of: `LONG`, `SHORT`, `LONG_ADD`, `SHORT_ADD`, `CLOSE_ALL`
+- `symbol`
+- `price`
+- `timeframe`
+- `exchange`
+- `timestamp`
+
+#### Strategy payload fields
+- `secret`
+- `source`
+- `order_action` (`buy` or `sell`)
+- `order_contracts`
+- `order_price`
+- `position_size`
+- `symbol`
+- `timeframe`
+- `exchange`
+- `timestamp`
+
+The server automatically converts strategy payloads into normalized bot actions and logs the resulting signal.
+
+#### Example indicator payload
 ```json
 {
   "secret": "YOUR_WEBHOOK_SECRET",
   "source": "Greedy Futures Indicator",
-  "action": "BUY",
+  "action": "LONG",
   "symbol": "MNQ1!",
   "price": "22500.25",
+  "timeframe": "15",
+  "exchange": "CME_MINI",
+  "timestamp": "2026-06-08T09:45:00Z"
+}
+```
+
+#### Example strategy payload
+```json
+{
+  "secret": "YOUR_WEBHOOK_SECRET",
+  "source": "Greedy Futures Strategy",
+  "order_action": "buy",
+  "order_contracts": "1",
+  "order_price": "22500.25",
+  "position_size": "1",
+  "symbol": "MNQ1!",
   "timeframe": "15",
   "exchange": "CME_MINI",
   "timestamp": "2026-06-08T09:45:00Z"
@@ -93,8 +139,10 @@ Receive TradingView alerts
 {
   "status": "success",
   "id": 1,
-  "action": "BUY",
+  "source": "Greedy Futures Strategy",
+  "action": "LONG",
   "symbol": "MNQ1!",
+  "price": "22500.25",
   "message": "Signal logged successfully"
 }
 ```
@@ -104,7 +152,8 @@ Receive TradingView alerts
 {
   "status": "ignored",
   "reason": "duplicate_detected",
-  "message": "Similar signal received within 10 seconds"
+  "action": "LONG",
+  "symbol": "MNQ1!"
 }
 ```
 
@@ -117,7 +166,7 @@ Health check
 ```
 
 ### 3. GET /signals
-Get latest 100 signals
+Get latest signals
 
 **Response:**
 ```json
@@ -127,7 +176,7 @@ Get latest 100 signals
       "id": 1,
       "received_at": "2026-06-08T09:45:01Z",
       "source": "Greedy Futures Indicator",
-      "action": "BUY",
+      "action": "LONG",
       "symbol": "MNQ1!",
       "price": "22500.25",
       "timeframe": "15",
@@ -139,6 +188,24 @@ Get latest 100 signals
 }
 ```
 
+### 4. GET /stats
+Get summary stats for logged signals
+
+### 5. GET /performance
+Reconstruct simulated trade performance from logged signals
+
+Optional query filters:
+- `symbol`
+- `timeframe`
+- `source`
+- `limit`
+
+### 6. GET /performance/export
+Download performance CSV export
+
+### 7. GET /performance/json
+Download performance JSON export
+
 ## 🧪 Testing
 
 ### Test with curl
@@ -147,13 +214,13 @@ Get latest 100 signals
 # Health check
 curl http://localhost:8000/health
 
-# Valid webhook
+# Valid indicator webhook
 curl -X POST http://localhost:8000/webhook \
   -H "Content-Type: application/json" \
   -d '{
     "secret": "YOUR_WEBHOOK_SECRET",
     "source": "Greedy Futures Indicator",
-    "action": "BUY",
+    "action": "LONG",
     "symbol": "MNQ1!",
     "price": "22500.25",
     "timeframe": "15",
@@ -161,10 +228,21 @@ curl -X POST http://localhost:8000/webhook \
     "timestamp": "2026-06-08T09:45:00Z"
   }'
 
-# Invalid secret (should return 403)
+# Valid strategy webhook
 curl -X POST http://localhost:8000/webhook \
   -H "Content-Type: application/json" \
-  -d '{"secret": "wrong", "action": "BUY"}'
+  -d '{
+    "secret": "YOUR_WEBHOOK_SECRET",
+    "source": "Greedy Futures Strategy",
+    "order_action": "buy",
+    "order_contracts": "1",
+    "order_price": "22500.25",
+    "position_size": "1",
+    "symbol": "MNQ1!",
+    "timeframe": "15",
+    "exchange": "CME_MINI",
+    "timestamp": "2026-06-08T09:45:00Z"
+  }'
 
 # Get signals
 curl http://localhost:8000/signals
@@ -172,40 +250,14 @@ curl http://localhost:8000/signals
 
 ## 📊 TradingView Alert Configuration
 
-### Pine Script Alert Message
+### Exact TradingView alert templates
 
-In your TradingView indicator, add this to your alert:
-
-```pinescript
-// In your indicator code
-alertMessage = '{' +
-    '"secret": "YOUR_WEBHOOK_SECRET",' +
-    '"source": "Zone Sweep Indicator",' +
-    '"action": "' + (longSignal ? "BUY" : shortSignal ? "SELL" : "EXIT") + '",' +
-    '"symbol": "' + syminfo.ticker + '",' +
-    '"price": "' + str.tostring(close) + '",' +
-    '"timeframe": "' + timeframe.period + '",' +
-    '"exchange": "' + syminfo.exchange + '",' +
-    '"timestamp": "' + str.format_time(time, "yyyy-MM-dd'T'HH:mm:ss'Z'") + '"' +
-    '}'
-
-// Trigger alert
-if longSignal
-    alert(alertMessage, title="Long Signal")
-```
-
-### Manual Alert Setup in TradingView
-
-1. Right-click your chart
-2. Click "Add Alert"
-3. Set Condition: Your indicator's signal
-4. Message: (Paste the JSON below)
-
+#### Indicator alert template
 ```json
 {
   "secret": "YOUR_WEBHOOK_SECRET",
   "source": "Zone Sweep Indicator",
-  "action": "{{strategy.order.action}}",
+  "action": "LONG",
   "symbol": "{{ticker}}",
   "price": "{{close}}",
   "timeframe": "{{interval}}",
@@ -214,12 +266,23 @@ if longSignal
 }
 ```
 
-**Note:** If using TradingView's {{variable}} syntax, use this instead:
+#### Strategy alert template
 ```json
-{"secret":"YOUR_SECRET","source":"Zone Sweep","action":"{{strategy.order.action}}","symbol":"{{ticker}}","price":"{{close}}","timeframe":"{{interval}}","exchange":"{{exchange}}","timestamp":"{{time}}"}
+{
+  "secret": "YOUR_WEBHOOK_SECRET",
+  "source": "Greedy Futures Strategy",
+  "order_action": "{{strategy.order.action}}",
+  "order_contracts": "{{strategy.order.contracts}}",
+  "order_price": "{{strategy.order.price}}",
+  "position_size": "{{strategy.position_size}}",
+  "symbol": "{{ticker}}",
+  "timeframe": "{{interval}}",
+  "exchange": "{{exchange}}",
+  "timestamp": "{{time}}"
+}
 ```
 
-5. Webhook URL: `http://YOUR_SERVER_IP:8000/webhook`
+TradingView will send the strategy payload and the bot converts it into a normalized signal action automatically.
 
 ## 🌐 Deployment
 
