@@ -7,15 +7,12 @@ Supports BOTH:
    LONG, SHORT, LONG_ADD, SHORT_ADD, CLOSE_ALL
 
 2. Strategy alerts:
-   order_action, order_contracts, order_price, position_size,
-   order_id, order_comment
+   order_action, order_contracts, order_price, position_size
 
 Logs normalized signals to SQLite + CSV and calculates forward-test performance.
-Includes trade reconciliation against TradingView Strategy Tester CSV exports.
 """
 
 import os
-import io
 import json
 import csv
 import sqlite3
@@ -24,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request, status, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, validator
 from dotenv import load_dotenv
@@ -51,10 +48,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TradingView Webhook Bot - Greedy Strategy",
     description="Receives indicator or strategy alerts from TradingView",
-    version="3.1.1",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
+
+# === Pydantic Models ===
 
 class WebhookPayload(BaseModel):
     secret: str
@@ -65,8 +64,6 @@ class WebhookPayload(BaseModel):
     timeframe: str
     exchange: str
     timestamp: str
-    order_id: Optional[str] = None
-    order_comment: Optional[str] = None
 
     @validator("action")
     def validate_action(cls, v):
@@ -79,21 +76,10 @@ class WebhookPayload(BaseModel):
 class StrategyPayload(BaseModel):
     secret: str
     source: str
-
     order_action: str
     order_contracts: str
     order_price: str
-    order_id: Optional[str] = None
-    order_comment: Optional[str] = None
-
-    market_position: Optional[str] = None
-    market_position_size: Optional[str] = None
-
-    prev_market_position: Optional[str] = None
-    prev_market_position_size: Optional[str] = None
-
     position_size: str
-
     symbol: str
     timeframe: str
     exchange: str
@@ -103,6 +89,8 @@ class StrategyPayload(BaseModel):
 class HealthResponse(BaseModel):
     status: str
 
+
+# === Database Functions ===
 
 def init_database():
     conn = sqlite3.connect(DATABASE_FILE)
@@ -199,6 +187,13 @@ def append_to_csv(signal_id: int, payload: WebhookPayload, raw_payload: str):
 
 
 def get_current_open_position_size(symbol: str, timeframe: str, source: Optional[str] = None) -> int:
+    """
+    Reconstruct current open position from already-logged normalized signals.
+    LONG/LONG_ADD increase position.
+    SHORT/SHORT_ADD decrease position.
+    CLOSE_ALL resets position to 0.
+    """
+
     conn = sqlite3.connect(DATABASE_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -240,6 +235,11 @@ def get_current_open_position_size(symbol: str, timeframe: str, source: Optional
 
 
 def convert_strategy_to_bot_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert TradingView strategy order-fill payload into normalized bot action:
+    LONG, LONG_ADD, SHORT, SHORT_ADD, CLOSE_ALL.
+    """
+
     strategy_payload = StrategyPayload(**data)
 
     order_action = strategy_payload.order_action.lower()
@@ -271,10 +271,10 @@ def convert_strategy_to_bot_payload(data: Dict[str, Any]) -> Dict[str, Any]:
         "timeframe": strategy_payload.timeframe,
         "exchange": strategy_payload.exchange,
         "timestamp": strategy_payload.timestamp,
-        "order_id": strategy_payload.order_id,
-        "order_comment": strategy_payload.order_comment,
     }
 
+
+# === API Endpoints ===
 
 @app.post("/webhook", status_code=status.HTTP_201_CREATED)
 async def receive_webhook(request: Request):
@@ -293,6 +293,7 @@ async def receive_webhook(request: Request):
         if data.get("secret") != WEBHOOK_SECRET:
             raise HTTPException(status_code=403, detail="Invalid secret")
 
+        # Strategy alert payload support
         if "order_action" in data and "position_size" in data:
             normalized_data = convert_strategy_to_bot_payload(data)
             raw_payload_to_store = json.dumps({
@@ -356,6 +357,8 @@ async def get_signals(limit: int = 100):
     conn.close()
     return {"signals": [dict(row) for row in rows], "count": len(rows)}
 
+
+# === Stats + Performance Helpers ===
 
 SYMBOL_MULTIPLIERS = {
     "MNQ1!": 2,
@@ -491,158 +494,6 @@ async def export_performance_json():
     return FileResponse(PERFORMANCE_JSON_FILE, media_type="application/json", filename=PERFORMANCE_JSON_FILE)
 
 
-def build_closed_trades_from_rows(rows):
-    open_positions: Dict[str, Dict[str, Any]] = {}
-    closed_trades = []
-
-    for row in rows:
-        action = row["action"]
-        sym = row["symbol"]
-        tf = row["timeframe"]
-        src = row["source"]
-        key = f"{src}:{sym}:{tf}"
-
-        try:
-            price = float(row["price"])
-        except Exception:
-            continue
-
-        received_at = row["received_at"]
-        alert_time = row["alert_timestamp"]
-
-        if action in ["LONG", "LONG_ADD"]:
-            if key not in open_positions:
-                open_positions[key] = {
-                    "source": src,
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": "LONG",
-                    "contracts": 0,
-                    "total_entry_value": 0.0,
-                    "entry_time": received_at,
-                    "entry_alert_time": alert_time,
-                }
-
-            elif open_positions[key]["side"] != "LONG":
-                pos = open_positions.pop(key)
-                contracts = pos["contracts"]
-                avg_entry = pos["total_entry_value"] / contracts
-                mult = get_multiplier(sym)
-                pnl = (avg_entry - price) * contracts * mult
-
-                closed_trades.append({
-                    "source": pos["source"],
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": "SHORT",
-                    "contracts": contracts,
-                    "entry_price": round(avg_entry, 4),
-                    "exit_price": price,
-                    "points": round(avg_entry - price, 4),
-                    "multiplier": mult,
-                    "pnl": round(pnl, 2),
-                    "entry_time": pos["entry_time"],
-                    "exit_time": received_at,
-                    "entry_alert_time": pos["entry_alert_time"],
-                    "exit_alert_time": alert_time,
-                })
-
-                open_positions[key] = {
-                    "source": src,
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": "LONG",
-                    "contracts": 0,
-                    "total_entry_value": 0.0,
-                    "entry_time": received_at,
-                    "entry_alert_time": alert_time,
-                }
-
-            open_positions[key]["contracts"] += 1
-            open_positions[key]["total_entry_value"] += price
-
-        elif action in ["SHORT", "SHORT_ADD"]:
-            if key not in open_positions:
-                open_positions[key] = {
-                    "source": src,
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": "SHORT",
-                    "contracts": 0,
-                    "total_entry_value": 0.0,
-                    "entry_time": received_at,
-                    "entry_alert_time": alert_time,
-                }
-
-            elif open_positions[key]["side"] != "SHORT":
-                pos = open_positions.pop(key)
-                contracts = pos["contracts"]
-                avg_entry = pos["total_entry_value"] / contracts
-                mult = get_multiplier(sym)
-                pnl = (price - avg_entry) * contracts * mult
-
-                closed_trades.append({
-                    "source": pos["source"],
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": "LONG",
-                    "contracts": contracts,
-                    "entry_price": round(avg_entry, 4),
-                    "exit_price": price,
-                    "points": round(price - avg_entry, 4),
-                    "multiplier": mult,
-                    "pnl": round(pnl, 2),
-                    "entry_time": pos["entry_time"],
-                    "exit_time": received_at,
-                    "entry_alert_time": pos["entry_alert_time"],
-                    "exit_alert_time": alert_time,
-                })
-
-                open_positions[key] = {
-                    "source": src,
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": "SHORT",
-                    "contracts": 0,
-                    "total_entry_value": 0.0,
-                    "entry_time": received_at,
-                    "entry_alert_time": alert_time,
-                }
-
-            open_positions[key]["contracts"] += 1
-            open_positions[key]["total_entry_value"] += price
-
-        elif action == "CLOSE_ALL":
-            if key in open_positions:
-                pos = open_positions.pop(key)
-                contracts = pos["contracts"]
-                avg_entry = pos["total_entry_value"] / contracts
-                side = pos["side"]
-                mult = get_multiplier(sym)
-
-                points = price - avg_entry if side == "LONG" else avg_entry - price
-                pnl = points * contracts * mult
-
-                closed_trades.append({
-                    "source": pos["source"],
-                    "symbol": sym,
-                    "timeframe": tf,
-                    "side": side,
-                    "contracts": contracts,
-                    "entry_price": round(avg_entry, 4),
-                    "exit_price": price,
-                    "points": round(points, 4),
-                    "multiplier": mult,
-                    "pnl": round(pnl, 2),
-                    "entry_time": pos["entry_time"],
-                    "exit_time": received_at,
-                    "entry_alert_time": pos["entry_alert_time"],
-                    "exit_alert_time": alert_time,
-                })
-
-    return closed_trades, list(open_positions.values())
-
-
 @app.get("/performance")
 async def get_performance(
     symbol: Optional[str] = None,
@@ -650,6 +501,12 @@ async def get_performance(
     source: Optional[str] = None,
     limit: int = 100,
 ):
+    """
+    Reconstruct simulated trades handling LONG_ADD / SHORT_ADD.
+    Optional filters:
+    /performance?source=Greedy%20Futures%20Strategy
+    /performance?source=Greedy%20Futures%20Indicator
+    """
     try:
         conn = sqlite3.connect(DATABASE_FILE)
         conn.row_factory = sqlite3.Row
@@ -676,7 +533,142 @@ async def get_performance(
         rows = cursor.fetchall()
         conn.close()
 
-        closed_trades, open_positions_list = build_closed_trades_from_rows(rows)
+        open_positions: Dict[str, Dict[str, Any]] = {}
+        closed_trades = []
+
+        for row in rows:
+            action = row["action"]
+            sym = row["symbol"]
+            tf = row["timeframe"]
+            src = row["source"]
+            key = f"{src}:{sym}:{tf}"
+
+            try:
+                price = float(row["price"])
+            except Exception:
+                continue
+
+            received_at = row["received_at"]
+
+            if action in ["LONG", "LONG_ADD"]:
+                if key not in open_positions:
+                    open_positions[key] = {
+                        "source": src,
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": "LONG",
+                        "contracts": 0,
+                        "total_entry_value": 0.0,
+                        "entry_time": received_at,
+                    }
+
+                elif open_positions[key]["side"] != "LONG":
+                    pos = open_positions.pop(key)
+                    contracts = pos["contracts"]
+                    avg_entry = pos["total_entry_value"] / contracts
+                    mult = get_multiplier(sym)
+                    pnl = (avg_entry - price) * contracts * mult
+
+                    closed_trades.append({
+                        "source": pos["source"],
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": "SHORT",
+                        "contracts": contracts,
+                        "entry_price": round(avg_entry, 4),
+                        "exit_price": price,
+                        "points": round(avg_entry - price, 4),
+                        "multiplier": mult,
+                        "pnl": round(pnl, 2),
+                        "entry_time": pos["entry_time"],
+                        "exit_time": received_at,
+                    })
+
+                    open_positions[key] = {
+                        "source": src,
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": "LONG",
+                        "contracts": 0,
+                        "total_entry_value": 0.0,
+                        "entry_time": received_at,
+                    }
+
+                open_positions[key]["contracts"] += 1
+                open_positions[key]["total_entry_value"] += price
+
+            elif action in ["SHORT", "SHORT_ADD"]:
+                if key not in open_positions:
+                    open_positions[key] = {
+                        "source": src,
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": "SHORT",
+                        "contracts": 0,
+                        "total_entry_value": 0.0,
+                        "entry_time": received_at,
+                    }
+
+                elif open_positions[key]["side"] != "SHORT":
+                    pos = open_positions.pop(key)
+                    contracts = pos["contracts"]
+                    avg_entry = pos["total_entry_value"] / contracts
+                    mult = get_multiplier(sym)
+                    pnl = (price - avg_entry) * contracts * mult
+
+                    closed_trades.append({
+                        "source": pos["source"],
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": "LONG",
+                        "contracts": contracts,
+                        "entry_price": round(avg_entry, 4),
+                        "exit_price": price,
+                        "points": round(price - avg_entry, 4),
+                        "multiplier": mult,
+                        "pnl": round(pnl, 2),
+                        "entry_time": pos["entry_time"],
+                        "exit_time": received_at,
+                    })
+
+                    open_positions[key] = {
+                        "source": src,
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": "SHORT",
+                        "contracts": 0,
+                        "total_entry_value": 0.0,
+                        "entry_time": received_at,
+                    }
+
+                open_positions[key]["contracts"] += 1
+                open_positions[key]["total_entry_value"] += price
+
+            elif action == "CLOSE_ALL":
+                if key in open_positions:
+                    position = open_positions.pop(key)
+                    contracts = position["contracts"]
+                    avg_entry = position["total_entry_value"] / contracts
+                    side = position["side"]
+                    multiplier = get_multiplier(sym)
+
+                    points = price - avg_entry if side == "LONG" else avg_entry - price
+                    pnl = points * contracts * multiplier
+
+                    closed_trades.append({
+                        "source": position["source"],
+                        "symbol": sym,
+                        "timeframe": tf,
+                        "side": side,
+                        "contracts": contracts,
+                        "entry_price": round(avg_entry, 4),
+                        "exit_price": price,
+                        "points": round(points, 4),
+                        "multiplier": multiplier,
+                        "pnl": round(pnl, 2),
+                        "entry_time": position["entry_time"],
+                        "exit_time": received_at,
+                    })
 
         pnl_values = [t["pnl"] for t in closed_trades]
         wins = [p for p in pnl_values if p > 0]
@@ -705,6 +697,8 @@ async def get_performance(
         for sym, data in by_symbol.items():
             data["win_rate"] = (data["wins"] / data["closed_trades"] * 100) if data["closed_trades"] > 0 else 0
             del data["wins"]
+
+        open_positions_list = list(open_positions.values())
 
         write_performance_csv(closed_trades)
         write_performance_json(closed_trades)
@@ -736,186 +730,6 @@ async def get_performance(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Performance error: {str(e)}")
-
-
-def parse_strategy_tester_csv(csv_text: str, trade_date: Optional[str] = None):
-    reader = csv.DictReader(io.StringIO(csv_text))
-    grouped = {}
-
-    for row in reader:
-        trade_num = row.get("Trade number")
-        if not trade_num:
-            continue
-
-        dt = row.get("Date and time", "")
-        if trade_date and not dt.startswith(trade_date):
-            continue
-
-        grouped.setdefault(trade_num, []).append(row)
-
-    trades = []
-
-    for trade_num, rows in grouped.items():
-        entry = None
-        exit_ = None
-
-        for row in rows:
-            row_type = row.get("Type", "").lower()
-
-            if "entry" in row_type:
-                entry = row
-            elif "exit" in row_type:
-                exit_ = row
-
-        if not entry or not exit_:
-            continue
-
-        entry_type = entry.get("Type", "").lower()
-        side = "LONG" if "long" in entry_type else "SHORT"
-
-        trades.append({
-            "strategy_trade_number": int(trade_num),
-            "side": side,
-            "entry_time": entry.get("Date and time"),
-            "exit_time": exit_.get("Date and time"),
-            "entry_price": float(entry.get("Price USD")),
-            "exit_price": float(exit_.get("Price USD")),
-            "contracts": int(float(entry.get("Size (qty)", 1))),
-            "strategy_pnl": float(exit_.get("Net PnL USD")),
-            "exit_signal": exit_.get("Signal"),
-        })
-
-    trades.sort(key=lambda x: x["strategy_trade_number"])
-    return trades
-
-
-def build_bot_closed_trades_for_reconciliation(
-    source: str = "Greedy Futures Strategy",
-    symbol: Optional[str] = None,
-    timeframe: Optional[str] = None,
-    trade_date: Optional[str] = None,
-):
-    conn = sqlite3.connect(DATABASE_FILE)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    query = "SELECT * FROM signals WHERE source = ?"
-    params = [source]
-
-    if symbol:
-        query += " AND symbol = ?"
-        params.append(symbol)
-
-    if timeframe:
-        query += " AND timeframe = ?"
-        params.append(timeframe)
-
-    if trade_date:
-        query += " AND alert_timestamp LIKE ?"
-        params.append(f"{trade_date}%")
-
-    query += " ORDER BY received_at ASC"
-
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
-
-    closed_trades, _ = build_closed_trades_from_rows(rows)
-    return closed_trades
-
-
-@app.post("/trade_reconciliation")
-async def trade_reconciliation(
-    file: UploadFile = File(...),
-    trade_date: Optional[str] = None,
-    symbol: Optional[str] = "MNQ1!",
-    timeframe: Optional[str] = "15",
-    source: Optional[str] = "Greedy Futures Strategy",
-):
-    try:
-        content = await file.read()
-        csv_text = content.decode("utf-8-sig")
-
-        strategy_trades = parse_strategy_tester_csv(csv_text, trade_date=trade_date)
-
-        bot_trades = build_bot_closed_trades_for_reconciliation(
-            source=source,
-            symbol=symbol,
-            timeframe=timeframe,
-            trade_date=trade_date,
-        )
-
-        comparisons = []
-        max_len = max(len(strategy_trades), len(bot_trades))
-
-        for idx in range(max_len):
-            strategy_trade = strategy_trades[idx] if idx < len(strategy_trades) else None
-            bot_trade = bot_trades[idx] if idx < len(bot_trades) else None
-
-            if strategy_trade and bot_trade:
-                side_match = strategy_trade["side"] == bot_trade["side"]
-                entry_match = abs(strategy_trade["entry_price"] - bot_trade["entry_price"]) <= 0.25
-                exit_match = abs(strategy_trade["exit_price"] - bot_trade["exit_price"]) <= 0.25
-                pnl_match = abs(strategy_trade["strategy_pnl"] - bot_trade["pnl"]) <= 2.50
-
-                matched = side_match and entry_match and exit_match and pnl_match
-
-                comparisons.append({
-                    "index": idx + 1,
-                    "status": "MATCH" if matched else "MISMATCH",
-                    "checks": {
-                        "side_match": side_match,
-                        "entry_price_match": entry_match,
-                        "exit_price_match": exit_match,
-                        "pnl_match": pnl_match,
-                    },
-                    "strategy": strategy_trade,
-                    "bot": bot_trade,
-                    "difference": {
-                        "entry_price_diff": round(bot_trade["entry_price"] - strategy_trade["entry_price"], 4),
-                        "exit_price_diff": round(bot_trade["exit_price"] - strategy_trade["exit_price"], 4),
-                        "pnl_diff": round(bot_trade["pnl"] - strategy_trade["strategy_pnl"], 2),
-                    }
-                })
-
-            elif strategy_trade and not bot_trade:
-                comparisons.append({
-                    "index": idx + 1,
-                    "status": "MISSING_IN_BOT",
-                    "strategy": strategy_trade,
-                    "bot": None,
-                })
-
-            elif bot_trade and not strategy_trade:
-                comparisons.append({
-                    "index": idx + 1,
-                    "status": "EXTRA_IN_BOT",
-                    "strategy": None,
-                    "bot": bot_trade,
-                })
-
-        matched_count = sum(1 for c in comparisons if c["status"] == "MATCH")
-        mismatch_count = sum(1 for c in comparisons if c["status"] != "MATCH")
-
-        return {
-            "status": "ok",
-            "filters": {
-                "trade_date": trade_date,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "source": source,
-            },
-            "summary": {
-                "strategy_trades": len(strategy_trades),
-                "bot_trades": len(bot_trades),
-                "matched": matched_count,
-                "mismatched_or_missing": mismatch_count,
-            },
-            "comparisons": comparisons,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Reconciliation error: {str(e)}")
 
 
 if __name__ == "__main__":
