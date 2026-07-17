@@ -1,465 +1,1643 @@
-# TradingView Webhook Bot
+# 🚀 Greedy Trading Automation Platform (GTAP)
 
-A Python FastAPI webhook server that receives TradingView indicator and strategy alerts, normalizes them, and logs them to SQLite + CSV for performance analysis.
+> **From Strategy to Execution.**
 
-## 🎯 Purpose
+A modular, production-oriented trading automation platform built with **Python**, **FastAPI**, and a layered execution architecture that transforms TradingView strategies into validated, auditable, testable, and eventually live-executable trading workflows.
 
-This bot receives trading signals from TradingView and:
-- ✅ Validates webhook authentication
-- ✅ Accepts both indicator alerts and strategy alerts
-- ✅ Normalizes strategy alerts into bot actions
-- ✅ Logs all signals to SQLite database
-- ✅ Creates CSV backup for easy analysis
-- ✅ Prevents duplicate signals (10-second window)
-- ✅ Provides API to query logged signals and performance
+GTAP is designed to bridge the gap between strategy development and real-world execution by introducing structured validation, risk management, execution services, persistence, and broker abstraction before any order reaches a live brokerage.
 
-## ⚠️ Important: Logging Only
+---
 
-**This bot does NOT place trades.** It only logs signals for:
-- Backtesting strategy performance
-- Manual review before execution
-- Building trading history
-- Future broker integration (coming later)
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-REST_API-green.svg)
+![SQLite](https://img.shields.io/badge/SQLite-Persistent_Storage-blue.svg)
+![Status](https://img.shields.io/badge/Status-Active_Development-success.svg)
+![Tests](https://img.shields.io/badge/Tests-17_Passing-success.svg)
+![License](https://img.shields.io/badge/License-MIT-orange.svg)
 
-## 📁 Project Structure
+---
+
+# Table of Contents
+
+- Overview
+- Why GTAP?
+- Current Features
+- System Architecture
+- Design Principles
+- Project Structure
+- Core Components
+- Execution Database
+- REST API
+- TradingView Integration
+- Installation
+- Configuration
+- Running GTAP
+- Automated Testing
+- Signal Replay
+- Deployment
+- Roadmap
+- Future Vision
+- License
+
+---
+
+# Overview
+
+Greedy Trading Automation Platform (GTAP) is a modular trading infrastructure designed to safely automate TradingView strategies while maintaining complete visibility into every stage of the execution pipeline.
+
+Rather than allowing TradingView alerts to communicate directly with a live broker, GTAP introduces multiple layers of validation and auditing before execution occurs.
+
+Every signal is treated as an event that can be:
+
+- Validated
+- Risk checked
+- Executed
+- Persisted
+- Audited
+- Replayed
+- Analyzed
+
+This architecture makes the platform significantly safer than direct webhook-to-broker implementations while providing complete traceability for every trading decision.
+
+GTAP currently executes against a Mock Broker for forward testing and validation. The architecture has been intentionally designed so that the Mock Broker can later be replaced with a live broker integration such as Tradovate with minimal changes to the execution pipeline.
+
+---
+
+# Why GTAP?
+
+Most TradingView automation projects follow a simple pattern:
+
+TradingView
+
+↓
+
+Webhook
+
+↓
+
+Broker
+
+While straightforward, this approach introduces several challenges:
+
+- No centralized risk management
+- No execution audit trail
+- Limited error handling
+- Difficult debugging
+- Poor historical visibility
+- Tight coupling between TradingView and the broker
+
+GTAP was created to solve these problems by introducing a structured execution pipeline between TradingView and the brokerage layer.
+
+Instead of treating TradingView alerts as executable orders, GTAP treats them as requests that must pass through a series of validation stages before execution.
+
+This architecture enables:
+
+- Controlled execution
+- Broker independence
+- Better testing
+- Improved reliability
+- Future scalability
+- Complete observability
+
+---
+
+# Current Features
+
+## TradingView Integration
+
+- TradingView Strategy Alerts
+- Indicator Alerts
+- JSON Webhook Processing
+- Signal Normalization
+
+---
+
+## FastAPI REST Server
+
+- Secure webhook endpoint
+- REST API
+- Health monitoring
+- Execution APIs
+- Statistics endpoints
+
+---
+
+## Execution Engine
+
+- Modular execution service
+- Broker abstraction layer
+- Position synchronization
+- Order lifecycle management
+
+---
+
+## Risk Engine
+
+- Source validation
+- Symbol validation
+- Timeframe validation
+- Position limits
+- Daily loss protection
+- Trading enable/disable controls
+
+---
+
+## Mock Broker
+
+Supports realistic paper execution including:
+
+- Accounts
+- Orders
+- Fills
+- Positions
+
+Designed to mirror the behavior of a real broker while remaining completely offline for safe testing.
+
+---
+
+## Execution Repository
+
+Persistent storage for:
+
+- Orders
+- Fills
+- Positions
+- Risk Events
+- Audit Events
+
+using a dedicated SQLite execution database.
+
+---
+
+## Signal Replay
+
+Replay historical TradingView signals through the complete execution pipeline to validate changes before live deployment.
+
+---
+
+## Automated Testing
+
+Current test coverage includes:
+
+- Repository testing
+- Risk Engine testing
+- Mock Broker testing
+- Execution Service testing
+- Persistence testing
+- Integration testing
+
+Current Status:
+
+✅ 17 Passing Tests
+
+---
+
+# Project Philosophy
+
+GTAP is built around one fundamental principle:
+
+> **Every trading decision should be transparent, reproducible, and auditable.**
+
+Rather than connecting TradingView directly to a brokerage account, GTAP creates a structured execution workflow that validates every incoming signal, evaluates risk, executes against a broker abstraction, records every event, and maintains a complete audit history.
+
+This layered architecture provides confidence during forward testing while making the transition to live execution significantly safer.
+
+---
+
+# Current Development Status
+
+| Component | Status |
+|-----------|--------|
+| TradingView Integration | ✅ Complete |
+| FastAPI API | ✅ Complete |
+| Signal Normalization | ✅ Complete |
+| Risk Engine | ✅ Complete |
+| Execution Service | ✅ Complete |
+| Mock Broker | ✅ Complete |
+| Execution Repository | ✅ Complete |
+| SQLite Persistence | ✅ Complete |
+| Audit Trail | ✅ Complete |
+| Signal Replay | ✅ Complete |
+| REST API | ✅ Complete |
+| Automated Tests | ✅ Complete |
+| Dashboard | 🚧 Planned |
+| Tradovate Integration | 🚧 Planned |
+| Performance Analytics | 🚧 Planned |
+| AI Trading Coach | 🚧 Planned |
+
+---
+
+# High-Level Architecture
+
+```text
+                 TradingView Strategy
+                         │
+                         ▼
+                 TradingView Alert
+                         │
+                         ▼
+                  FastAPI Webhook
+                         │
+                         ▼
+                Signal Normalization
+                         │
+                         ▼
+                 Execution Service
+                         │
+          ┌──────────────┴──────────────┐
+          ▼                             ▼
+    Risk Engine                   Mock Broker
+          │                             │
+          └──────────────┬──────────────┘
+                         ▼
+              Execution Repository
+                         │
+      ┌──────────┬──────────┬──────────┬──────────┐
+      ▼          ▼          ▼          ▼
+    Orders     Fills    Positions   Audit Log
+```
+
+---
+
+**Next:** Part 2 – Project Structure & Core Components
+
+We'll dive into every folder and every major class in the project, explaining exactly how they work together and why the architecture is organized the way it is.
+
+# Project Structure
+
+GTAP follows a layered architecture that separates responsibilities into independent modules. Each layer has a single responsibility, making the platform easier to test, maintain, and extend.
 
 ```
-tradingview-webhook-bot/
-├── main.py              # FastAPI application
-├── requirements.txt     # Python dependencies
-├── .env.example         # Environment variables template
-├── .env                 # Your actual secrets (gitignored)
-├── signals.db           # SQLite database (auto-created)
-├── trade_signals.csv    # CSV backup (auto-created)
-├── performance_trades.csv # Performance export (auto-created)
-├── performance_trades.json # Performance export (auto-created)
-└── README.md            # This file
+greedy-trading-automation-platform/
+│
+├── broker/
+│   ├── broker_interface.py
+│   ├── mock_broker.py
+│   └── models.py
+│
+├── models/
+│   ├── execution.py
+│   ├── signals.py
+│   └── ...
+│
+├── repository/
+│   └── execution_repository.py
+│
+├── services/
+│   └── execution_service.py
+│
+├── tests/
+│   ├── test_execution_persistence.py
+│   ├── test_mock_broker.py
+│   ├── test_risk_engine.py
+│   ├── ...
+│
+├── tools/
+│   └── signal_replay.py
+│
+├── broker_app.py
+├── main.py
+├── risk_engine.py
+├── config.py
+├── requirements.txt
+├── README.md
+└── execution.db
 ```
 
-## 🚀 Quick Start
+> **Note:** The exact folder structure may evolve as the platform grows, but the architectural layers remain the same.
 
-### 1. Clone/Setup Project
+---
+
+# Core Architecture
+
+GTAP is intentionally designed using a layered architecture.
+
+Each layer performs one responsibility and communicates only with the layer directly above or below it.
+
+```
+TradingView
+
+↓
+
+FastAPI
+
+↓
+
+Execution Service
+
+↓
+
+Risk Engine
+
+↓
+
+Broker
+
+↓
+
+Repository
+
+↓
+
+SQLite
+```
+
+This separation allows each component to evolve independently without affecting the rest of the platform.
+
+---
+
+# Core Components
+
+## TradingView
+
+TradingView is responsible for generating trading signals.
+
+GTAP currently supports:
+
+- Strategy Alerts
+- Indicator Alerts
+- JSON Webhooks
+
+TradingView never communicates directly with a broker.
+
+Instead, every alert becomes a request that must pass through GTAP's validation pipeline.
+
+---
+
+## FastAPI Webhook Layer
+
+File:
+
+```
+main.py
+```
+
+Responsibilities:
+
+- Receive TradingView alerts
+- Validate webhook secrets
+- Parse incoming payloads
+- Normalize strategy and indicator signals
+- Forward requests into the execution pipeline
+
+The FastAPI layer intentionally contains very little business logic.
+
+Its responsibility is simply to receive requests and hand them off to the Execution Service.
+
+---
+
+## Execution Service
+
+File:
+
+```
+services/execution_service.py
+```
+
+The Execution Service acts as the orchestration layer for the platform.
+
+It coordinates the interaction between:
+
+- Risk Engine
+- Broker
+- Repository
+
+Responsibilities include:
+
+- Receive normalized trading signals
+- Request risk evaluation
+- Submit approved orders
+- Synchronize positions
+- Persist execution history
+- Generate audit events
+
+The Execution Service contains the application's primary business workflow.
+
+Every trading request passes through this component.
+
+---
+
+## Risk Engine
+
+File:
+
+```
+risk_engine.py
+```
+
+The Risk Engine determines whether a signal is allowed to proceed.
+
+Current validations include:
+
+- Approved signal source
+- Approved trading symbol
+- Approved timeframe
+- Maximum contract limits
+- Daily loss protection
+- Trading enabled/disabled state
+
+If any validation fails, execution immediately stops and the rejection is recorded as a Risk Event.
+
+This keeps all execution decisions deterministic and fully auditable.
+
+---
+
+## Broker Layer
+
+Directory:
+
+```
+broker/
+```
+
+GTAP communicates with brokers through an abstraction layer.
+
+Current implementation:
+
+```
+Mock Broker
+```
+
+Future implementation:
+
+```
+Tradovate Broker
+```
+
+Because the Execution Service depends on a broker interface rather than a specific broker implementation, replacing the Mock Broker with Tradovate requires minimal changes.
+
+This design follows the Dependency Inversion Principle.
+
+---
+
+## Mock Broker
+
+Current implementation:
+
+```
+broker/mock_broker.py
+```
+
+The Mock Broker simulates realistic broker behavior while remaining completely offline.
+
+Supported features:
+
+- Accounts
+- Orders
+- Fills
+- Positions
+
+This allows developers to safely forward test trading strategies without risking real capital.
+
+---
+
+## Execution Repository
+
+Directory:
+
+```
+repository/
+```
+
+The Execution Repository provides persistent storage for execution history.
+
+Current tables include:
+
+- execution_orders
+- execution_fills
+- execution_positions
+- execution_risk_events
+- execution_audit_events
+
+The repository isolates database operations from the rest of the application.
+
+This keeps SQL logic separate from business logic and simplifies testing.
+
+---
+
+## Signal Replay Engine
+
+File:
+
+```
+tools/signal_replay.py
+```
+
+The replay engine allows historical TradingView signals to be processed through the complete execution pipeline.
+
+Replay uses the exact same components as live execution:
+
+TradingView Signal
+
+↓
+
+Execution Service
+
+↓
+
+Risk Engine
+
+↓
+
+Mock Broker
+
+↓
+
+Repository
+
+This makes replay an excellent regression-testing tool before deploying new platform changes.
+
+---
+
+# Execution Lifecycle
+
+Every signal follows the same lifecycle.
+
+```
+TradingView Alert
+
+        │
+
+        ▼
+
+Webhook Received
+
+        │
+
+        ▼
+
+Signal Validation
+
+        │
+
+        ▼
+
+Risk Evaluation
+
+        │
+
+        ▼
+
+Order Approved?
+
+   ┌───────────────┐
+   │               │
+   │     YES       │
+   │               │
+   ▼               ▼
+Execute         Reject
+   │               │
+   ▼               ▼
+Persist       Risk Event
+   │
+   ▼
+Audit Event
+```
+
+Because every branch is recorded, GTAP maintains a complete history of both successful executions and rejected signals.
+
+---
+
+# Design Principles
+
+GTAP follows several software engineering principles.
+
+## Separation of Concerns
+
+Each module performs one responsibility.
+
+Examples:
+
+- FastAPI receives requests.
+- Risk Engine validates.
+- Broker executes.
+- Repository persists.
+
+---
+
+## Dependency Injection
+
+Execution Service does not create brokers.
+
+Instead, a broker implementation is injected during application startup.
+
+This allows Mock Broker and future live brokers to be swapped without modifying execution logic.
+
+---
+
+## Repository Pattern
+
+Database access is isolated within the repository layer.
+
+Advantages include:
+
+- Easier testing
+- Cleaner business logic
+- Database independence
+- Better maintainability
+
+---
+
+## Auditability
+
+Every important decision generates an audit event.
+
+This provides complete visibility into:
+
+- Signal receipt
+- Risk approval
+- Risk rejection
+- Order submission
+- Order fills
+- Position synchronization
+
+No execution decision occurs without leaving a trace.
+
+---
+
+## Extensibility
+
+GTAP is designed for future expansion.
+
+Planned additions include:
+
+- Tradovate Adapter
+- Interactive Brokers Adapter
+- Performance Dashboard
+- Portfolio Analytics
+- AI Trading Coach
+
+These features can be added without redesigning the existing architecture.
+
+# Execution Database
+
+GTAP separates execution history from signal logging by using a dedicated execution database.
+
+Current database:
+
+```
+execution.db
+```
+
+Unlike temporary in-memory objects, every important execution event is persisted for auditing, debugging, replay, and future analytics.
+
+---
+
+## Database Schema
+
+```
+execution.db
+
+├── execution_orders
+├── execution_fills
+├── execution_positions
+├── execution_risk_events
+└── execution_audit_events
+```
+
+Each table represents a stage of the execution lifecycle.
+
+---
+
+## execution_orders
+
+Stores every order submitted to the broker.
+
+Typical fields include:
+
+| Field | Description |
+|--------|-------------|
+| id | Internal order identifier |
+| signal_id | Source signal |
+| broker_order_id | Broker-generated order ID |
+| symbol | Trading symbol |
+| side | BUY / SELL |
+| quantity | Number of contracts |
+| status | Pending, Filled, Cancelled |
+| created_at | Timestamp |
+
+Purpose:
+
+- Order history
+- Broker reconciliation
+- Replay validation
+- Performance analysis
+
+---
+
+## execution_fills
+
+Stores every completed execution.
+
+Typical fields include:
+
+| Field | Description |
+|--------|-------------|
+| id | Fill identifier |
+| order_id | Associated order |
+| symbol | Instrument |
+| quantity | Filled quantity |
+| fill_price | Execution price |
+| filled_at | Fill timestamp |
+
+Purpose:
+
+- P&L calculations
+- Slippage analysis
+- Broker verification
+
+---
+
+## execution_positions
+
+Tracks the platform's understanding of open positions.
+
+Typical fields include:
+
+| Field | Description |
+|--------|-------------|
+| symbol | Trading symbol |
+| quantity | Current position size |
+| average_price | Average entry |
+| updated_at | Last synchronization |
+
+Purpose:
+
+- Position synchronization
+- Risk evaluation
+- Portfolio monitoring
+
+---
+
+## execution_risk_events
+
+Stores every risk decision.
+
+Examples:
+
+- Source rejected
+- Invalid timeframe
+- Trading disabled
+- Daily loss exceeded
+- Position size exceeded
+
+Purpose:
+
+Every rejected trade becomes part of the permanent audit history.
+
+This allows developers to answer questions like:
+
+> Why wasn't this order executed?
+
+without searching application logs.
+
+---
+
+## execution_audit_events
+
+The audit log records every important system event.
+
+Examples:
+
+- Signal received
+- Risk approved
+- Risk rejected
+- Order submitted
+- Fill received
+- Position updated
+
+Unlike standard application logs, audit events describe business decisions rather than technical events.
+
+---
+
+# REST API
+
+GTAP exposes a REST API for monitoring and interacting with the execution platform.
+
+---
+
+## Health
+
+```
+GET /broker/health
+```
+
+Returns platform health information.
+
+Example response:
+
+```json
+{
+  "status": "ok",
+  "database": "execution.db",
+  "broker": "MockBroker"
+}
+```
+
+---
+
+## Accounts
+
+```
+GET /broker/accounts
+```
+
+Returns broker account information.
+
+---
+
+## Positions
+
+```
+GET /broker/positions
+```
+
+Returns all open positions currently tracked by the broker.
+
+---
+
+## Orders
+
+```
+GET /broker/orders
+```
+
+Returns submitted broker orders.
+
+---
+
+## Execution Summary
+
+```
+GET /broker/execution-summary
+```
+
+Returns summary statistics for the execution database.
+
+Example:
+
+```json
+{
+    "orders": 15,
+    "fills": 15,
+    "positions": 1,
+    "risk_events": 2,
+    "audit_events": 48
+}
+```
+
+Useful for quickly verifying platform activity.
+
+---
+
+## Execution Orders
+
+```
+GET /broker/execution-orders
+```
+
+Returns persisted execution orders.
+
+---
+
+## Execution Fills
+
+```
+GET /broker/execution-fills
+```
+
+Returns persisted fills.
+
+---
+
+## Risk Events
+
+```
+GET /broker/risk-events
+```
+
+Returns all rejected or blocked executions.
+
+Useful for debugging strategy behavior.
+
+---
+
+## Audit Events
+
+```
+GET /broker/audit-events
+```
+
+Returns the chronological execution history.
+
+This endpoint provides the complete business audit trail.
+
+---
+
+## Test Signal
+
+```
+POST /broker/test-signal
+```
+
+Injects a sample signal directly into the execution pipeline.
+
+Useful for:
+
+- Integration testing
+- Development
+- API verification
+
+---
+
+## Reset Broker
+
+```
+POST /broker/reset
+```
+
+Resets the Mock Broker state.
+
+Execution history remains intact.
+
+---
+
+# TradingView Integration
+
+GTAP accepts TradingView webhooks using JSON payloads.
+
+TradingView never communicates directly with a broker.
+
+Instead, alerts become execution requests processed by GTAP.
+
+---
+
+## Supported Alert Types
+
+### Strategy Alerts
+
+Generated from TradingView strategies using strategy placeholders.
+
+Example:
+
+```json
+{
+    "secret": "...",
+    "source": "Greedy Futures Strategy",
+    "order_action": "{{strategy.order.action}}",
+    "order_contracts": "{{strategy.order.contracts}}",
+    "order_price": "{{strategy.order.price}}",
+    "position_size": "{{strategy.position_size}}",
+    "symbol": "{{ticker}}",
+    "timeframe": "{{interval}}",
+    "exchange": "{{exchange}}",
+    "timestamp": "{{time}}"
+}
+```
+
+---
+
+### Indicator Alerts
+
+Generated from TradingView indicators.
+
+Example:
+
+```json
+{
+    "secret": "...",
+    "source": "Zone Sweep Indicator",
+    "action": "LONG",
+    "symbol": "{{ticker}}",
+    "price": "{{close}}",
+    "timeframe": "{{interval}}",
+    "exchange": "{{exchange}}",
+    "timestamp": "{{time}}"
+}
+```
+
+---
+
+# Signal Normalization
+
+TradingView strategies and indicators produce different payload formats.
+
+GTAP converts both formats into a single normalized execution request.
+
+Example:
+
+Strategy payload
+
+```
+BUY
+1 Contract
+22500.25
+```
+
+↓
+
+Normalized
+
+```
+Action: LONG
+Symbol: MNQ1!
+Price: 22500.25
+Contracts: 1
+```
+
+This normalization ensures every downstream component processes identical objects regardless of signal source.
+
+---
+
+# End-to-End Execution Flow
+
+The complete lifecycle of a trading signal is illustrated below.
+
+```
+TradingView
+
+      │
+
+      ▼
+
+Webhook Received
+
+      │
+
+      ▼
+
+Signal Normalization
+
+      │
+
+      ▼
+
+Execution Service
+
+      │
+
+      ▼
+
+Risk Engine
+
+      │
+
+      ▼
+
+Approved?
+
+   ┌───────────────┐
+   │               │
+   │     YES       │
+   │               │
+   ▼               ▼
+Broker         Risk Event
+   │
+   ▼
+Fill
+   │
+   ▼
+Repository
+   │
+   ▼
+Audit Trail
+```
+
+Every execution follows this identical pipeline, ensuring consistent behavior whether processing live alerts or replaying historical signals.
+
+---
+
+# Why Persistence Matters
+
+Every decision made by GTAP is permanently recorded.
+
+This enables:
+
+- Complete auditability
+- Trade replay
+- Strategy debugging
+- Historical analytics
+- Performance reporting
+- Compliance-style traceability
+
+The platform is designed so that no execution decision occurs without leaving a permanent record.
+
+This philosophy forms the foundation for future features such as live broker execution, performance dashboards, portfolio analytics, and AI-assisted trade review.
+
+# Installation
+
+GTAP is designed to be simple to install while remaining production-ready.
+
+## Prerequisites
+
+Before installing GTAP, ensure your environment includes:
+
+- Python 3.11+
+- Git
+- SQLite (bundled with Python)
+- TradingView account (for webhook alerts)
+
+Recommended:
+
+- Visual Studio Code
+- Postman
+- DB Browser for SQLite
+
+---
+
+## Clone the Repository
 
 ```bash
-cd tradingview-webhook-bot
+git clone https://github.com/<your-username>/greedy-trading-automation-platform.git
+
+cd greedy-trading-automation-platform
+```
+
+---
+
+## Create a Virtual Environment
+
+Windows
+
+```powershell
+python -m venv venv
+
+venv\Scripts\activate
+```
+
+Linux / macOS
+
+```bash
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+source venv/bin/activate
+```
+
+---
+
+## Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Set Environment Variables
+---
+
+# Configuration
+
+GTAP uses environment variables for secrets and configuration.
+
+Copy the template:
 
 ```bash
-# Copy example file
 cp .env.example .env
-# On Windows PowerShell use: copy .env.example .env
-
-# Edit .env and add your secret
-nano .env
 ```
 
-Your `.env` file should look like:
-```bash
-WEBHOOK_SECRET=YOUR_WEBHOOK_SECRET
+Windows PowerShell
+
+```powershell
+copy .env.example .env
 ```
 
-### 3. Run the Server
+Example:
+
+```text
+WEBHOOK_SECRET=YOUR_SECRET_HERE
+```
+
+Never commit your `.env` file.
+
+---
+
+# Running GTAP
+
+Start the FastAPI application.
 
 ```bash
 python main.py
 ```
 
-Server will start on `http://localhost:8000`
-
-## 🔌 API Endpoints
-
-### 1. POST /webhook
-Receive TradingView alerts.
-
-This endpoint supports two payload formats:
-- Indicator alert payload with normalized `action` values
-- Strategy alert payload using `order_action`, `order_contracts`, `order_price`, and `position_size`
-
-#### Indicator payload fields
-- `secret`
-- `source`
-- `action` — one of: `LONG`, `SHORT`, `LONG_ADD`, `SHORT_ADD`, `CLOSE_ALL`
-- `symbol`
-- `price`
-- `timeframe`
-- `exchange`
-- `timestamp`
-
-#### Strategy payload fields
-- `secret`
-- `source`
-- `order_action` (`buy` or `sell`)
-- `order_contracts`
-- `order_price`
-- `position_size`
-- `symbol`
-- `timeframe`
-- `exchange`
-- `timestamp`
-
-The server automatically converts strategy payloads into normalized bot actions and logs the resulting signal.
-
-#### Example indicator payload
-```json
-{
-  "secret": "YOUR_WEBHOOK_SECRET",
-  "source": "Greedy Futures Indicator",
-  "action": "LONG",
-  "symbol": "MNQ1!",
-  "price": "22500.25",
-  "timeframe": "15",
-  "exchange": "CME_MINI",
-  "timestamp": "2026-06-08T09:45:00Z"
-}
-```
-
-#### Example strategy payload
-```json
-{
-  "secret": "YOUR_WEBHOOK_SECRET",
-  "source": "Greedy Futures Strategy",
-  "order_action": "buy",
-  "order_contracts": "1",
-  "order_price": "22500.25",
-  "position_size": "1",
-  "symbol": "MNQ1!",
-  "timeframe": "15",
-  "exchange": "CME_MINI",
-  "timestamp": "2026-06-08T09:45:00Z"
-}
-```
-
-**Response (Success):**
-```json
-{
-  "status": "success",
-  "id": 1,
-  "source": "Greedy Futures Strategy",
-  "action": "LONG",
-  "symbol": "MNQ1!",
-  "price": "22500.25",
-  "message": "Signal logged successfully"
-}
-```
-
-**Response (Duplicate):**
-```json
-{
-  "status": "ignored",
-  "reason": "duplicate_detected",
-  "action": "LONG",
-  "symbol": "MNQ1!"
-}
-```
-
-### 2. GET /health
-Health check
-
-**Response:**
-```json
-{"status": "ok"}
-```
-
-### 3. GET /signals
-Get latest signals
-
-**Response:**
-```json
-{
-  "signals": [
-    {
-      "id": 1,
-      "received_at": "2026-06-08T09:45:01Z",
-      "source": "Greedy Futures Indicator",
-      "action": "LONG",
-      "symbol": "MNQ1!",
-      "price": "22500.25",
-      "timeframe": "15",
-      "exchange": "CME_MINI",
-      "alert_timestamp": "2026-06-08T09:45:00Z"
-    }
-  ],
-  "count": 1
-}
-```
-
-### 4. GET /stats
-Get summary stats for logged signals
-
-### 5. GET /performance
-Reconstruct simulated trade performance from logged signals
-
-Optional query filters:
-- `symbol`
-- `timeframe`
-- `source`
-- `limit`
-
-### 6. GET /performance/export
-Download performance CSV export
-
-### 7. GET /performance/json
-Download performance JSON export
-
-## 🧪 Testing
-
-### Test with curl
+or
 
 ```bash
-# Health check
-curl http://localhost:8000/health
-
-# Valid indicator webhook
-curl -X POST http://localhost:8000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "secret": "YOUR_WEBHOOK_SECRET",
-    "source": "Greedy Futures Indicator",
-    "action": "LONG",
-    "symbol": "MNQ1!",
-    "price": "22500.25",
-    "timeframe": "15",
-    "exchange": "CME_MINI",
-    "timestamp": "2026-06-08T09:45:00Z"
-  }'
-
-# Valid strategy webhook
-curl -X POST http://localhost:8000/webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "secret": "YOUR_WEBHOOK_SECRET",
-    "source": "Greedy Futures Strategy",
-    "order_action": "buy",
-    "order_contracts": "1",
-    "order_price": "22500.25",
-    "position_size": "1",
-    "symbol": "MNQ1!",
-    "timeframe": "15",
-    "exchange": "CME_MINI",
-    "timestamp": "2026-06-08T09:45:00Z"
-  }'
-
-# Get signals
-curl http://localhost:8000/signals
+uvicorn main:app --reload
 ```
 
-## 📊 TradingView Alert Configuration
+Server:
 
-### Exact TradingView alert templates
-
-#### Indicator alert template
-```json
-{
-  "secret": "YOUR_WEBHOOK_SECRET",
-  "source": "Zone Sweep Indicator",
-  "action": "LONG",
-  "symbol": "{{ticker}}",
-  "price": "{{close}}",
-  "timeframe": "{{interval}}",
-  "exchange": "{{exchange}}",
-  "timestamp": "{{time}}"
-}
+```
+http://localhost:8000
 ```
 
-#### Strategy alert template
-```json
-{
-  "secret": "YOUR_WEBHOOK_SECRET",
-  "source": "Greedy Futures Strategy",
-  "order_action": "{{strategy.order.action}}",
-  "order_contracts": "{{strategy.order.contracts}}",
-  "order_price": "{{strategy.order.price}}",
-  "position_size": "{{strategy.position_size}}",
-  "symbol": "{{ticker}}",
-  "timeframe": "{{interval}}",
-  "exchange": "{{exchange}}",
-  "timestamp": "{{time}}"
-}
+Swagger API Documentation:
+
+```
+http://localhost:8000/docs
 ```
 
-TradingView will send the strategy payload and the bot converts it into a normalized signal action automatically.
+OpenAPI Specification:
 
-## 🌐 Deployment
-
-### Option 1: VPS/Cloud Server (Recommended)
-
-**Prerequisites:**
-- Ubuntu 20.04+ server
-- Python 3.9+
-- Domain (optional)
-
-**Setup:**
-```bash
-# On your server
-git clone <your-repo>
-cd tradingview-webhook-bot
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# Edit .env with your secret
-nano .env
 ```
-
-**Run with Systemd:**
-Create `/etc/systemd/system/tradingview-bot.service`:
-```ini
-[Unit]
-Description=TradingView Webhook Bot
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/tradingview-webhook-bot
-Environment="PATH=/home/ubuntu/tradingview-webhook-bot/venv/bin"
-ExecStart=/home/ubuntu/tradingview-webhook-bot/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
+http://localhost:8000/openapi.json
 ```
-
-Enable and start:
-```bash
-sudo systemctl enable tradingview-bot
-sudo systemctl start tradingview-bot
-sudo systemctl status tradingview-bot
-```
-
-**With Nginx (SSL):**
-```nginx
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-    
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-    
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### Option 2: Railway/Render (Easy Deploy)
-
-**Railway:**
-1. Push code to GitHub
-2. Connect Railway to repo
-3. Add `WEBHOOK_SECRET` environment variable
-4. Deploy
-
-**Render:**
-1. Create new Web Service
-2. Connect GitHub repo
-3. Set environment variables
-4. Deploy
-
-### Option 3: Docker
-
-Create `Dockerfile`:
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-Build and run:
-```bash
-docker build -t tradingview-bot .
-docker run -p 8000:8000 --env-file .env tradingview-bot
-```
-
-## 🔒 Security Best Practices
-
-1. **Keep WEBHOOK_SECRET safe:**
-   - Never commit `.env` to git
-   - Use strong secret (32+ chars)
-   - Rotate periodically
-
-2. **Use HTTPS in production:**
-   - TradingView requires HTTPS for webhooks
-   - Use Let's Encrypt free SSL
-
-3. **Firewall:**
-   - Only open port 8000 (or 443)
-   - Restrict IP if possible
-
-4. **Database:**
-   - SQLite is fine for logging
-   - Back up `signals.db` regularly
-
-## 📈 Viewing Your Data
-
-### SQLite CLI
-```bash
-sqlite3 signals.db
-
-# View last 10 signals
-SELECT * FROM signals ORDER BY received_at DESC LIMIT 10;
-
-# Count signals by action
-SELECT action, COUNT(*) FROM signals GROUP BY action;
-
-# View today's signals
-SELECT * FROM signals WHERE DATE(received_at) = DATE('now');
-```
-
-### CSV Analysis
-Open `trade_signals.csv` in Excel, Google Sheets, or Python pandas:
-```python
-import pandas as pd
-df = pd.read_csv('trade_signals.csv')
-print(df.groupby('action').count())
-```
-
-## 🔧 Troubleshooting
-
-**Error: "WEBHOOK_SECRET environment variable is required"**
-→ Create `.env` file with your secret
-
-**Error: "Invalid secret"**
-→ Check that TradingView alert includes correct secret
-
-**Signals not appearing**
-→ Check `/health` endpoint
-→ Verify TradingView webhook URL is correct
-→ Check server firewall
-
-**Duplicates not filtering**
-→ Verify `DUPLICATE_WINDOW_SECONDS` (default: 10s)
-→ Check that action+symbol+timeframe+price are identical
-
-## 📝 License
-
-MIT License - Free to use and modify
-
-## 🚀 Roadmap
-
-- [ ] Add broker execution (IBKR, Alpaca)
-- [ ] Telegram/Discord notifications
-- [ ] Web dashboard for signal analysis
-- [ ] Paper trading mode
-- [ ] Risk management rules
-
-## 💬 Support
-
-For issues or questions, check:
-1. Server logs: `journalctl -u tradingview-bot -f`
-2. TradingView alert logs
-3. Test with curl before TradingView
 
 ---
 
-**Built for the Zone Sweep Trading Strategy** 🎯
+# First-Time Verification
+
+After startup, verify the application.
+
+Health check
+
+```bash
+curl http://localhost:8000/health
+```
+
+Expected:
+
+```json
+{
+    "status":"ok"
+}
+```
+
+Then verify the Broker API.
+
+```bash
+curl http://localhost:8000/broker/health
+```
+
+Expected:
+
+```json
+{
+    "status":"ok",
+    "broker":"MockBroker"
+}
+```
+
+If both endpoints respond successfully, GTAP is ready to receive TradingView alerts.
+
+---
+
+# Testing
+
+GTAP includes automated unit and integration tests.
+
+Run the complete suite:
+
+```bash
+python -m pytest -v
+```
+
+Current status:
+
+```
+17 Passed
+0 Failed
+```
+
+---
+
+## Test Coverage
+
+Current automated tests validate:
+
+✔ Mock Broker
+
+✔ Risk Engine
+
+✔ Execution Repository
+
+✔ Execution Persistence
+
+✔ Signal Replay
+
+✔ API Integration
+
+As the platform grows, additional coverage will be added for broker adapters, analytics, and AI-assisted trade review.
+
+---
+
+# Forward Testing Workflow
+
+Current execution workflow:
+
+```
+TradingView
+
+↓
+
+Webhook
+
+↓
+
+Execution Service
+
+↓
+
+Risk Engine
+
+↓
+
+Mock Broker
+
+↓
+
+Execution Repository
+
+↓
+
+Review Results
+```
+
+No real trades are placed.
+
+The Mock Broker enables safe forward testing while preserving the complete execution history for analysis.
+
+---
+
+# Signal Replay
+
+Historical TradingView alerts can be replayed through the platform.
+
+Replay follows the exact same execution pipeline used during live operation.
+
+```
+Historical Signals
+
+↓
+
+Replay Tool
+
+↓
+
+Execution Service
+
+↓
+
+Risk Engine
+
+↓
+
+Mock Broker
+
+↓
+
+Execution Repository
+```
+
+Replay is useful for:
+
+- Regression testing
+
+- Risk validation
+
+- Performance verification
+
+- Platform upgrades
+
+---
+
+# Deployment
+
+GTAP can be deployed on any platform capable of running Python and FastAPI.
+
+Common deployment targets include:
+
+- Windows Server
+
+- Ubuntu
+
+- Docker
+
+- Railway
+
+- Render
+
+- Azure
+
+- AWS
+
+- Google Cloud
+
+Future releases will include Docker Compose and Kubernetes deployment examples.
+
+---
+
+# Security
+
+GTAP has been designed with security in mind.
+
+Current protections include:
+
+- Webhook secret validation
+
+- Structured request validation
+
+- Risk-based execution controls
+
+- Persistent audit logging
+
+Recommended production practices:
+
+- HTTPS only
+
+- Reverse proxy (Nginx)
+
+- Environment variables
+
+- Firewall restrictions
+
+- Database backups
+
+---
+
+# Logging
+
+GTAP records multiple layers of execution history.
+
+Current logging includes:
+
+Application Logs
+
+- FastAPI
+
+Execution Logs
+
+- Orders
+
+- Fills
+
+- Positions
+
+Risk Logs
+
+- Rejected Signals
+
+Audit Logs
+
+- Business Events
+
+This layered logging model makes troubleshooting significantly easier than relying on application logs alone.
+
+---
+
+# Contributing
+
+Contributions are welcome.
+
+When contributing:
+
+1. Fork the repository.
+
+2. Create a feature branch.
+
+3. Add automated tests.
+
+4. Follow existing project structure.
+
+5. Submit a Pull Request.
+
+Major architectural changes should include documentation updates.
+
+---
+
+# Development Roadmap
+
+## Phase 1 — Foundation ✅
+
+- TradingView Integration
+
+- FastAPI
+
+- Signal Logging
+
+---
+
+## Phase 2 — Execution ✅
+
+- Risk Engine
+
+- Mock Broker
+
+- Execution Service
+
+---
+
+## Phase 3 — Persistence ✅
+
+- Execution Repository
+
+- Audit Trail
+
+- SQLite
+
+---
+
+## Phase 4 — Analytics 🚧
+
+Planned:
+
+- Performance Dashboard
+
+- Equity Curve
+
+- Trade Statistics
+
+- Win Rate Analytics
+
+- Drawdown Analysis
+
+---
+
+## Phase 5 — Live Trading 🚧
+
+Planned:
+
+- Tradovate Adapter
+
+- Live Order Routing
+
+- Position Synchronization
+
+- Broker Reconciliation
+
+---
+
+## Phase 6 — Intelligence 🚧
+
+Planned:
+
+- AI Trade Coach
+
+- Performance Suggestions
+
+- Risk Optimization
+
+- Behavioral Analysis
+
+- Strategy Insights
+
+---
+
+# Long-Term Vision
+
+GTAP is being built as a broker-agnostic trading automation platform.
+
+The long-term architecture is intended to support multiple execution providers through interchangeable broker adapters.
+
+Future architecture:
+
+```
+TradingView
+
+      │
+
+Execution Service
+
+      │
+
+Broker Interface
+
+ ┌──────────┼──────────────┐
+
+ ▼          ▼              ▼
+
+Mock     Tradovate      Interactive Brokers
+
+Broker     Adapter            Adapter
+```
+
+This design allows the execution pipeline to remain unchanged while new brokers are introduced.
+
+---
+
+# License
+
+This project is licensed under the MIT License.
+
+---
+
+# Disclaimer
+
+GTAP is provided for educational and research purposes.
+
+Trading financial markets involves substantial risk.
+
+The software does not guarantee profitability, and users are responsible for validating strategies before deploying them with real capital.
+
+Always test thoroughly in simulated environments before enabling live execution.
+
+---
+
+# Acknowledgments
+
+GTAP is the result of an iterative engineering process focused on building a transparent, modular, and production-oriented trading automation platform.
+
+The project continues to evolve toward safe live execution, advanced analytics, and AI-assisted trading workflows.
+
+---
+
+> **Greedy Trading Automation Platform (GTAP)**  
+> *From Strategy to Execution.*

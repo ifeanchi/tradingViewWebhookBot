@@ -89,3 +89,8 @@ htmlcov/
 *.bak
 *.old
 *.orig
+
+
+execution.db
+execution.db-shm
+execution.db-wal
