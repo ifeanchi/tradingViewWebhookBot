@@ -1,5 +1,23 @@
-from models.signal_models import NormalizedSignal
+from models.analytics import (
+    DirectionPerformance,
+    DrawdownMetrics,
+    EquityCurvePoint,
+    PerformanceAnalyticsReport,
+    PerformanceSummary,
+    StreakMetrics,
+    TimeBucketPerformance,
+    TradeDurationMetrics,
+    WeekdayPerformance,
+)
 
 __all__ = [
-    "NormalizedSignal",
+    "DirectionPerformance",
+    "DrawdownMetrics",
+    "EquityCurvePoint",
+    "PerformanceAnalyticsReport",
+    "PerformanceSummary",
+    "StreakMetrics",
+    "TimeBucketPerformance",
+    "TradeDurationMetrics",
+    "WeekdayPerformance",
 ]

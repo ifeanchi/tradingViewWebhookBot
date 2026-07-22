@@ -25,6 +25,7 @@ class ExecutionRepository:
     - orders
     - fills
     - positions
+    - completed trades
     - risk events
     - execution audit events
 
@@ -168,6 +169,48 @@ class ExecutionRepository:
                 ON DELETE SET NULL
         );
 
+        CREATE TABLE IF NOT EXISTS execution_trades (
+            trade_id TEXT PRIMARY KEY,
+
+            signal_id TEXT,
+            order_id TEXT,
+
+            broker_name TEXT,
+            source TEXT,
+
+            symbol TEXT NOT NULL,
+            timeframe TEXT,
+
+            side TEXT NOT NULL,
+
+            contracts INTEGER NOT NULL,
+
+            entry_price REAL NOT NULL,
+            exit_price REAL NOT NULL,
+
+            points REAL NOT NULL,
+
+            multiplier REAL NOT NULL DEFAULT 1,
+
+            gross_pnl REAL NOT NULL,
+            commission REAL NOT NULL DEFAULT 0,
+
+            net_pnl REAL NOT NULL,
+
+            result TEXT NOT NULL,
+
+            entry_time TEXT NOT NULL,
+            exit_time TEXT NOT NULL,
+
+            duration_seconds REAL NOT NULL,
+
+            created_at TEXT NOT NULL,
+
+            FOREIGN KEY(order_id)
+                REFERENCES execution_orders(order_id)
+                ON DELETE SET NULL
+        );
+
         CREATE INDEX IF NOT EXISTS
             idx_execution_orders_created_at
         ON execution_orders(created_at DESC);
@@ -207,6 +250,23 @@ class ExecutionRepository:
         CREATE INDEX IF NOT EXISTS
             idx_execution_audit_order_id
         ON execution_audit_events(order_id);
+
+        CREATE INDEX IF NOT EXISTS
+            idx_execution_trades_exit_time
+        ON execution_trades(exit_time DESC);
+
+        CREATE INDEX IF NOT EXISTS
+            idx_execution_trades_symbol
+        ON execution_trades(symbol);
+
+        CREATE INDEX IF NOT EXISTS
+            idx_execution_trades_result
+        ON execution_trades(result);
+
+        CREATE INDEX IF NOT EXISTS
+            idx_execution_trades_side
+        ON execution_trades(side);
+
         """
 
         with self._write_lock:
@@ -1069,6 +1129,308 @@ class ExecutionRepository:
             dict(row)
             for row in rows
         ]
+    
+
+    # =========================================================
+    # Trades
+    # =========================================================
+
+    def create_trade(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        contracts: int,
+        entry_price: float,
+        exit_price: float,
+        points: float,
+        gross_pnl: float,
+        net_pnl: float,
+        result: str,
+        entry_time: str,
+        exit_time: str,
+        duration_seconds: float,
+        multiplier: float = 1.0,
+        commission: float = 0.0,
+        signal_id: str | None = None,
+        order_id: str | None = None,
+        broker_name: str | None = None,
+        source: str | None = None,
+        timeframe: str | None = None,
+        trade_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Persist one completed trade.
+
+        Completed trades are treated as immutable records.
+        """
+
+        normalized_side = side.upper()
+        normalized_result = result.upper()
+
+        if contracts < 1:
+            raise ValueError(
+                "Trade contracts must be at least 1."
+            )
+
+        if multiplier <= 0:
+            raise ValueError(
+                "Trade multiplier must be greater than 0."
+            )
+
+        if commission < 0:
+            raise ValueError(
+                "Trade commission cannot be negative."
+            )
+
+        if duration_seconds < 0:
+            raise ValueError(
+                "Trade duration cannot be negative."
+            )
+
+        if normalized_side not in {"LONG", "SHORT"}:
+            raise ValueError(
+                "Trade side must be LONG or SHORT."
+            )
+
+        if normalized_result not in {
+            "WIN",
+            "LOSS",
+            "BREAKEVEN",
+        }:
+            raise ValueError(
+                "Trade result must be WIN, LOSS, or BREAKEVEN."
+            )
+
+        if order_id is not None:
+            if self.get_order(order_id) is None:
+                raise KeyError(
+                    f"Cannot create trade. "
+                    f"Order not found: {order_id}"
+                )
+
+        generated_trade_id = (
+            trade_id or str(uuid.uuid4())
+        )
+
+        now = utc_now_iso()
+
+        with self._write_lock:
+            with self.connection() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO execution_trades (
+                        trade_id,
+                        signal_id,
+                        order_id,
+                        broker_name,
+                        source,
+                        symbol,
+                        timeframe,
+                        side,
+                        contracts,
+                        entry_price,
+                        exit_price,
+                        points,
+                        multiplier,
+                        gross_pnl,
+                        commission,
+                        net_pnl,
+                        result,
+                        entry_time,
+                        exit_time,
+                        duration_seconds,
+                        created_at
+                    )
+                    VALUES (
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        generated_trade_id,
+                        signal_id,
+                        order_id,
+                        broker_name,
+                        source,
+                        symbol,
+                        timeframe,
+                        normalized_side,
+                        contracts,
+                        entry_price,
+                        exit_price,
+                        points,
+                        multiplier,
+                        gross_pnl,
+                        commission,
+                        net_pnl,
+                        normalized_result,
+                        entry_time,
+                        exit_time,
+                        duration_seconds,
+                        now,
+                    ),
+                )
+
+                connection.commit()
+
+        trade = self.get_trade(generated_trade_id)
+
+        if trade is None:
+            raise RuntimeError(
+                "Trade was created but could not be read."
+            )
+
+        return trade
+
+    def get_trade(
+        self,
+        trade_id: str,
+    ) -> dict[str, Any] | None:
+        """
+        Retrieve one completed trade by ID.
+        """
+
+        with self.connection() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM execution_trades
+                WHERE trade_id = ?
+                """,
+                (trade_id,),
+            ).fetchone()
+
+        return self._row_to_dict(row)
+
+    def list_trades(
+        self,
+        *,
+        symbol: str | None = None,
+        side: str | None = None,
+        result: str | None = None,
+        limit: int = 100,
+        order_by: str = "exit_time",
+        ascending: bool = False,
+    ) -> list[dict[str, Any]]:
+        """
+        List completed trades with optional filtering and ordering.
+        """
+
+        if limit < 1:
+            raise ValueError("Limit must be at least 1.")
+
+        allowed_order_fields = {
+            "entry_time",
+            "exit_time",
+            "symbol",
+            "side",
+            "result",
+            "gross_pnl",
+            "net_pnl",
+            "points",
+            "duration_seconds",
+        }
+
+        if order_by not in allowed_order_fields:
+            raise ValueError(
+                f"Invalid trade order field: {order_by}"
+            )
+
+        order_direction = "ASC" if ascending else "DESC"
+
+        conditions: list[str] = []
+        values: list[Any] = []
+
+        if symbol is not None:
+            conditions.append("symbol = ?")
+            values.append(symbol)
+
+        if side is not None:
+            normalized_side = side.upper()
+
+            if normalized_side not in {"LONG", "SHORT"}:
+                raise ValueError(
+                    "Trade side must be LONG or SHORT."
+                )
+
+            conditions.append("side = ?")
+            values.append(normalized_side)
+
+        if result is not None:
+            normalized_result = result.upper()
+
+            if normalized_result not in {
+                "WIN",
+                "LOSS",
+                "BREAKEVEN",
+            }:
+                raise ValueError(
+                    "Trade result must be WIN, LOSS, or BREAKEVEN."
+                )
+
+            conditions.append("result = ?")
+            values.append(normalized_result)
+
+        where_clause = ""
+
+        if conditions:
+            where_clause = (
+                "WHERE " + " AND ".join(conditions)
+            )
+
+        values.append(limit)
+
+        with self.connection() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM execution_trades
+                {where_clause}
+                ORDER BY {order_by} {order_direction}
+                LIMIT ?
+                """,
+                values,
+            ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+    
+
+
+    
+
+    def delete_trade(
+        self,
+        trade_id: str,
+    ) -> None:
+        """
+        Delete a completed trade.
+
+        Intended primarily for tests and administrative cleanup.
+        """
+
+        with self._write_lock:
+            with self.connection() as connection:
+                cursor = connection.execute(
+                    """
+                    DELETE FROM execution_trades
+                    WHERE trade_id = ?
+                    """,
+                    (trade_id,),
+                )
+
+                if cursor.rowcount == 0:
+                    raise KeyError(
+                        f"Trade not found: {trade_id}"
+                    )
+
+                connection.commit()
+
+
+
 
     # =========================================================
     # Summary
@@ -1121,6 +1483,13 @@ class ExecutionRepository:
                 """
             ).fetchone()[0]
 
+            trade_count = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM execution_trades
+                """
+            ).fetchone()[0]
+
         return {
             "database_path": str(
                 self.database_path.resolve()
@@ -1129,6 +1498,7 @@ class ExecutionRepository:
             "fills": fill_count,
             "risk_events": risk_event_count,
             "audit_events": audit_event_count,
+            "trades": trade_count,
             "open_positions": open_position_count,
             "rejected_risk_events": (
                 rejected_risk_count
