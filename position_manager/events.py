@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from position_manager.enums import Side
+
 
 @dataclass(frozen=True)
 class PositionEvent:
@@ -10,7 +12,7 @@ class PositionEvent:
 @dataclass(frozen=True)
 class PositionOpened(PositionEvent):
     symbol: str
-    side: str
+    side: Side
     quantity: int
     price: float
 
