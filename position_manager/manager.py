@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TypeAlias
 from uuid import uuid4
 
 from position_manager.enums import Side
@@ -13,27 +15,45 @@ from position_manager.snapshot import PositionSnapshot
 from position_manager.state import PositionState
 
 
+EventHandler: TypeAlias = Callable[[PositionEvent], PositionSnapshot]
+
+
 class PositionManager:
     """
     Maintains GTAP's broker-agnostic internal position state.
+
+    Position events are dispatched through a handler registry so new event
+    types can be added without growing a long conditional chain.
     """
 
     def __init__(self) -> None:
         self._state: PositionState | None = None
+
+        self._handlers: dict[type[PositionEvent], EventHandler] = {
+            PositionOpened: self._apply_open,
+        }
 
     @property
     def state(self) -> PositionState | None:
         return self._state
 
     def apply(self, event: PositionEvent) -> PositionSnapshot:
-        if isinstance(event, PositionOpened):
-            return self._apply_open(event)
+        handler = self._handlers.get(type(event))
 
-        raise TypeError(
-            f"Unsupported position event: {type(event).__name__}"
-        )
+        if handler is None:
+            raise TypeError(
+                f"Unsupported position event: {type(event).__name__}"
+            )
 
-    def _apply_open(self, event: PositionOpened) -> PositionSnapshot:
+        return handler(event)
+
+    def _apply_open(self, event: PositionEvent) -> PositionSnapshot:
+        if not isinstance(event, PositionOpened):
+            raise TypeError(
+                f"_apply_open expected PositionOpened, "
+                f"received {type(event).__name__}"
+            )
+
         if self._state is not None:
             raise PositionAlreadyOpen(
                 "Cannot open a position while another position is active."
