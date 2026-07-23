@@ -20,3 +20,6 @@ class QuantityMismatch(PositionManagerError):
 
 class InvalidAveragePrice(PositionManagerError):
     """Average price invalid."""
+
+class OverReduction(PositionManagerError):
+    """Attempted to reduce more contracts than currently held."""
