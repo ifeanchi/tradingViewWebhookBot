@@ -5,14 +5,21 @@ from typing import TypeAlias
 from uuid import uuid4
 
 from position_manager.enums import Side
-from position_manager.events import PositionEvent, PositionOpened
+from position_manager.events import (
+    PositionAdded,
+    PositionEvent,
+    PositionOpened,
+)
 from position_manager.exceptions import (
     InvalidAveragePrice,
     PositionAlreadyOpen,
+    PositionNotOpen,
     QuantityMismatch,
 )
 from position_manager.snapshot import PositionSnapshot
 from position_manager.state import PositionState
+
+
 
 
 EventHandler: TypeAlias = Callable[[PositionEvent], PositionSnapshot]
@@ -31,6 +38,7 @@ class PositionManager:
 
         self._handlers: dict[type[PositionEvent], EventHandler] = {
             PositionOpened: self._apply_open,
+            PositionAdded: self._apply_add,
         }
 
     @property
@@ -83,6 +91,50 @@ class PositionManager:
             realized_pnl=0.0,
             unrealized_pnl=0.0,
             opened_at=event.timestamp,
+            updated_at=event.timestamp,
+        )
+
+        return self.snapshot()
+    
+    def _apply_add(self, event: PositionEvent) -> PositionSnapshot:
+        if not isinstance(event, PositionAdded):
+            raise TypeError(
+                f"_apply_add expected PositionAdded, "
+                f"received {type(event).__name__}"
+            )
+
+        if self._state is None:
+            raise PositionNotOpen(
+                "Cannot add to a position while flat."
+            )
+
+        if event.quantity <= 0:
+            raise QuantityMismatch(
+                "Added quantity must be greater than zero."
+            )
+
+        if event.price <= 0:
+            raise InvalidAveragePrice(
+                "Added price must be greater than zero."
+            )
+
+        current_quantity = self._state.quantity
+        new_quantity = current_quantity + event.quantity
+
+        weighted_average_price = (
+            (self._state.average_price * current_quantity)
+            + (event.price * event.quantity)
+        ) / new_quantity
+
+        self._state = PositionState(
+            trade_id=self._state.trade_id,
+            symbol=self._state.symbol,
+            side=self._state.side,
+            quantity=new_quantity,
+            average_price=weighted_average_price,
+            realized_pnl=self._state.realized_pnl,
+            unrealized_pnl=self._state.unrealized_pnl,
+            opened_at=self._state.opened_at,
             updated_at=event.timestamp,
         )
 
